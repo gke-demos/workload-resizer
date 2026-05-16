@@ -48,17 +48,21 @@ type Bounds struct {
 }
 
 type Config struct {
-	BaselineInstanceType string                 `json:"baselineInstanceType"`
-	NodeTypes            map[string]NodeProfile `json:"nodeTypes"`
-	Bounds               Bounds                 `json:"bounds"`
+	// BaselineNodeType is the value of the node-type label (see the
+	// controller's --node-type-label flag, default cloud.google.com/machine-family)
+	// that the workload's requests are calibrated against. Must also
+	// appear as a key in NodeTypes.
+	BaselineNodeType string                 `json:"baselineNodeType"`
+	NodeTypes        map[string]NodeProfile `json:"nodeTypes"`
+	Bounds           Bounds                 `json:"bounds"`
 }
 
 func (c *Config) Validate() error {
-	if c.BaselineInstanceType == "" {
-		return fmt.Errorf("baselineInstanceType is required")
+	if c.BaselineNodeType == "" {
+		return fmt.Errorf("baselineNodeType is required")
 	}
-	if _, ok := c.NodeTypes[c.BaselineInstanceType]; !ok {
-		return fmt.Errorf("baselineInstanceType %q must appear in nodeTypes", c.BaselineInstanceType)
+	if _, ok := c.NodeTypes[c.BaselineNodeType]; !ok {
+		return fmt.Errorf("baselineNodeType %q must appear in nodeTypes", c.BaselineNodeType)
 	}
 	for name, p := range c.NodeTypes {
 		if p.CPUPerf <= 0 {

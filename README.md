@@ -2,7 +2,7 @@
 
 A Kubernetes controller for GKE that uses the in-place pod resize subresource (`pods/resize`, GA in K8s 1.35) to dynamically adjust pod resource requests when pods land on node types whose performance characteristics differ from the type the workload was originally calibrated for.
 
-When a Deployment is sized for one machine type (say `n2d-standard-4`) but the scheduler places its pods on a more powerful one (`n4-standard-4`, ~25% more CPU per core), the original requests over-provision capacity. `workload-resizer` watches scheduled pods, reads the assigned node's `node.kubernetes.io/instance-type` label, and patches the pod's requests in place using a configurable performance-unit matrix — without restarting the container.
+When a Deployment is sized for one machine family (say `n2d`) but the scheduler places its pods on a more powerful one (`n4`, ~25% more CPU per core), the original requests over-provision capacity. `workload-resizer` watches scheduled pods, reads the assigned node's `cloud.google.com/machine-family` label (configurable via `--node-type-label`), and patches the pod's requests in place using a configurable performance-unit matrix — without restarting the container.
 
 ## Status
 
@@ -39,7 +39,7 @@ See the [install page](https://gke-demos.github.io/workload-resizer/docs/install
 
 For each pod that lands on a node, the controller:
 
-1. Reads `node.kubernetes.io/instance-type` from the assigned node.
+1. Reads the assigned node's `cloud.google.com/machine-family` label (configurable via `--node-type-label`).
 2. Looks up the per-type performance unit in the global config (a ConfigMap).
 3. Computes `desired = clamp(original × baselinePerf / nodePerf, bounds)` per container.
 4. Patches the pod via `/resize`, mirroring the change into limits when present to preserve QoS class.

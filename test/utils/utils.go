@@ -183,8 +183,11 @@ func IsKWOKInstalled() bool {
 }
 
 // CreateKWOKNode creates a fake Node managed by KWOK with the given
-// instance-type label, then waits for it to be Ready.
-func CreateKWOKNode(name, instanceType string) error {
+// machine family as the value of cloud.google.com/machine-family
+// (the controller's default --node-type-label). It also sets
+// node.kubernetes.io/instance-type to "<family>-fake" so the node
+// looks GKE-shaped to anything else inspecting it.
+func CreateKWOKNode(name, family string) error {
 	manifest := fmt.Sprintf(`
 apiVersion: v1
 kind: Node
@@ -195,7 +198,8 @@ metadata:
     kwok.x-k8s.io/node: fake
   labels:
     type: kwok
-    node.kubernetes.io/instance-type: %s
+    cloud.google.com/machine-family: %s
+    node.kubernetes.io/instance-type: %s-fake
 spec:
   taints:
   - effect: NoSchedule
@@ -218,7 +222,7 @@ status:
     architecture: amd64
     operatingSystem: linux
     kubeletVersion: fake
-`, name, instanceType)
+`, name, family, family)
 	cmd := exec.Command("kubectl", "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	if _, err := Run(cmd); err != nil {

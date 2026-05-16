@@ -1,6 +1,8 @@
 ---
-title: Install
-weight: 1
+title: "Install"
+linkTitle: "Install"
+weight: 10
+description: "Apply the controller + ConfigMap, inventory your cluster's machine families, and verify with a sample workload."
 ---
 
 `workload-resizer` ships as two manifests on each GitHub Release:
@@ -26,8 +28,10 @@ the last-known config and logs the refresh failure every 30s
   in-place pod resize subresource (`pods/resize`) is GA in 1.35; on
   older nodes the controller's `/resize` patches are rejected with a
   soft-skip `ResizeUnsupported` event.
-- Nodes labeled with `node.kubernetes.io/instance-type` (the GKE
-  default — kubelet sets it for you).
+- Nodes labeled with `cloud.google.com/machine-family` (the controller's
+  default `--node-type-label`; GKE sets it for you). If you're not on
+  GKE, point `--node-type-label` at whatever label your provider uses
+  to identify machine families.
 - A user with cluster-admin (the controller's RBAC is cluster-scoped:
   `pods`, `pods/resize`, `nodes`, `events`).
 
@@ -55,30 +59,38 @@ kubectl -n workload-resizer-system rollout status deployment/workload-resizer-co
 kubectl -n workload-resizer-system logs deployment/workload-resizer-controller-manager
 ```
 
-## Inventorying your cluster's instance types
+## Inventorying your cluster's node families
 
-The shipped `config.yaml` lists GKE node types (`n2d-standard-4`,
-`n4-standard-4`, `c3-standard-4`). Yours may differ. Get the actual
-set:
+The shipped `config.yaml` lists GKE machine families (`n2d`, `n4`,
+`c3`) under `nodeTypes:`. Yours may differ. Get the actual set:
 
 ```bash
 kubectl get nodes \
-  -L node.kubernetes.io/instance-type \
-  -o custom-columns=NODE:.metadata.name,TYPE:.metadata.labels.node\\.kubernetes\\.io/instance-type
+  -L cloud.google.com/machine-family \
+  -L node.kubernetes.io/instance-type
 ```
 
-Every type that appears in this output should also appear under
-`nodeTypes:` in your ConfigMap. Any type the controller sees on a pod
-that *isn't* in the config will be skipped with an `UnknownNodeType`
-event on the pod — visible via `kubectl describe pod`.
+The `MACHINE-FAMILY` column is what the controller keys off by
+default. Every distinct value that appears there should also appear
+as a key under `nodeTypes:` in your ConfigMap. Any value the
+controller sees on a pod's node that *isn't* in the config will be
+skipped with an `UnknownNodeType` event on the pod — visible via
+`kubectl describe pod`.
+
+If you'd rather match on the full instance type (e.g., `n4-standard-4`
+vs `n4-standard-8` as distinct entries), set
+`--node-type-label=node.kubernetes.io/instance-type` and key
+`nodeTypes:` by instance type. Family-level is the recommended
+default because perf per core is constant across sizes within a
+family.
 
 ## Picking performance units
 
 The math is `desired = original × baselinePerf / nodePerf`. So:
 
-- **Pick a baseline.** Whichever machine type your existing
-  Deployments' requests are calibrated against. Set
-  `baselineInstanceType` to that name and give it `cpuPerf: 1.0`.
+- **Pick a baseline.** Whichever machine family your existing
+  Deployments' requests are calibrated against. Set `baselineNodeType`
+  to that family (e.g., `n2d`) and give its entry `cpuPerf: 1.0`.
 - **Express other types relative to the baseline.** If a newer node
   is 25% more powerful per core, give it `cpuPerf: 1.25` — the
   controller will compute `original × 1.0 / 1.25 = 0.8 × original`

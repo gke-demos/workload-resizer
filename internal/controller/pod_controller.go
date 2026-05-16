@@ -45,7 +45,13 @@ const (
 	AnnotationAppliedInstanceType = AnnotationPrefix + "applied-instance-type"
 	AnnotationAppliedAt           = AnnotationPrefix + "applied-at"
 
-	NodeInstanceTypeLabel = "node.kubernetes.io/instance-type"
+	// DefaultNodeTypeLabel is the node label whose value identifies the
+	// "node type" the controller looks up in its config. GKE sets
+	// cloud.google.com/machine-family to the machine family (e.g., "n2d",
+	// "n4", "c3"), which is the right granularity for performance-unit
+	// lookups — perf per core is constant across sizes within a family.
+	// Override per cluster via the --node-type-label flag.
+	DefaultNodeTypeLabel = "cloud.google.com/machine-family"
 
 	EventReasonResized           = "Resized"
 	EventReasonAlreadyAligned    = "AlreadyAligned"
@@ -69,6 +75,16 @@ type PodReconciler struct {
 	APIReader client.Reader
 	Recorder  record.EventRecorder
 	Config    *config.Store
+	// NodeTypeLabel is the node label whose value the controller looks up
+	// in cfg.NodeTypes. Empty falls back to DefaultNodeTypeLabel.
+	NodeTypeLabel string
+}
+
+func (r *PodReconciler) nodeTypeLabel() string {
+	if r.NodeTypeLabel != "" {
+		return r.NodeTypeLabel
+	}
+	return DefaultNodeTypeLabel
 }
 
 type containerDecision struct {
@@ -112,9 +128,12 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, fmt.Errorf("get node %q: %w", pod.Spec.NodeName, err)
 	}
 
-	nodeType := node.Labels[NodeInstanceTypeLabel]
+	labelKey := r.nodeTypeLabel()
+	nodeType := node.Labels[labelKey]
 	if nodeType == "" {
-		// Node has no instance-type label; nothing to do (e.g., kind nodes in tests).
+		// Node has no node-type label (e.g., bare Kind nodes, or a
+		// non-GKE cluster where --node-type-label hasn't been pointed at
+		// whatever your provider uses). Nothing to compute against.
 		return ctrl.Result{}, nil
 	}
 
@@ -129,7 +148,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			"Node type %q not in workload-resizer config; skipping", nodeType)
 		return ctrl.Result{}, nil
 	}
-	baselineProfile := cfg.NodeTypes[cfg.BaselineInstanceType]
+	baselineProfile := cfg.NodeTypes[cfg.BaselineNodeType]
 
 	decisions := make([]containerDecision, 0, len(pod.Spec.Containers))
 	for i := range pod.Spec.Containers {
@@ -187,7 +206,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			return ctrl.Result{}, err
 		}
 		r.Recorder.Eventf(&pod, corev1.EventTypeNormal, EventReasonResized,
-			"Resized for node type %q (baseline %q)", nodeType, cfg.BaselineInstanceType)
+			"Resized for node type %q (baseline %q)", nodeType, cfg.BaselineNodeType)
 	} else {
 		r.Recorder.Eventf(&pod, corev1.EventTypeNormal, EventReasonAlreadyAligned,
 			"Pod resources already match desired for node type %q", nodeType)

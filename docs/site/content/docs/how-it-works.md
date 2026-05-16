@@ -1,11 +1,13 @@
 ---
-title: How it works
-weight: 2
+title: "How it works"
+linkTitle: "How it works"
+weight: 20
+description: "Reconcile flow, annotation contract, the resize subresource, and the design decisions that came out of testing."
 ---
 
 ## The problem
 
-Deployment authors set CPU / memory requests calibrated for a specific node type. When the cluster has a heterogeneous node pool — say `n2d-standard-4` alongside the newer, ~25% more powerful `n4-standard-4` — pods that land on the more powerful nodes over-provision their requests for the actual work being done. The classic fix is the Vertical Pod Autoscaler, but VPA recreates pods and reasons about utilization over time. `workload-resizer` does something narrower: when a pod is scheduled, look at where it landed and patch its requests **right there**, with a known performance-unit ratio, no restart.
+Deployment authors set CPU / memory requests calibrated for a specific machine family. When the cluster has a heterogeneous node pool — say `n2d` alongside the newer, ~25% more powerful `n4` — pods that land on the more powerful nodes over-provision their requests for the actual work being done. The classic fix is the Vertical Pod Autoscaler, but VPA recreates pods and reasons about utilization over time. `workload-resizer` does something narrower: when a pod is scheduled, look at where it landed and patch its requests **right there**, with a known performance-unit ratio, no restart.
 
 ## What it watches
 
@@ -13,7 +15,7 @@ The controller watches `Pod` objects and only acts when all of the following are
 
 - `spec.nodeName != ""` — the pod has been scheduled.
 - It's owned by one of `{ReplicaSet, StatefulSet, DaemonSet, Job}`. Bare pods are skipped (out of scope for v1).
-- The `workload-resizer.io/applied-instance-type` annotation isn't present, or doesn't match the current node's `node.kubernetes.io/instance-type` label.
+- The `workload-resizer.io/applied-instance-type` annotation isn't present, or doesn't match the current value of the node-type label (default `cloud.google.com/machine-family`; override with `--node-type-label`).
 
 ## What it does, step by step
 
@@ -37,17 +39,17 @@ For each container in `spec.containers` (init / sidecar containers are skipped i
 A single ConfigMap (default `workload-resizer-system/workload-resizer-config`):
 
 ```yaml
-baselineInstanceType: n2d-standard-4
+baselineNodeType: n2d
 nodeTypes:
-  n2d-standard-4: { cpuPerf: 1.0,  memPerf: 1.0 }
-  n4-standard-4:  { cpuPerf: 1.25, memPerf: 1.0 }
-  c3-standard-4:  { cpuPerf: 1.30, memPerf: 1.0 }
+  n2d: { cpuPerf: 1.0,  memPerf: 1.0 }
+  n4:  { cpuPerf: 1.25, memPerf: 1.0 }
+  c3:  { cpuPerf: 1.30, memPerf: 1.0 }
 bounds:
   cpu:    { min: "50m",  max: "16" }
   memory: { min: "64Mi", max: "32Gi" }
 ```
 
-`cpuPerf` and `memPerf` are normalized performance units — the controller computes `baseline / node`, so a `1.25` is "this node is 1.25× as capable as baseline, so it needs `1/1.25 = 0.8` of the request." The controller polls this ConfigMap on `--config-refresh-interval` (30s default).
+The keys under `nodeTypes:` are the *values* the controller will see on the node-type label — `n2d`, `n4`, `c3` etc. with the default `cloud.google.com/machine-family`; full instance types if you set `--node-type-label=node.kubernetes.io/instance-type` instead. `cpuPerf` and `memPerf` are normalized performance units — the controller computes `baseline / node`, so a `1.25` is "this node is 1.25× as capable as baseline, so it needs `1/1.25 = 0.8` of the request." The controller polls this ConfigMap on `--config-refresh-interval` (30s default).
 
 ## Design decisions worth knowing
 

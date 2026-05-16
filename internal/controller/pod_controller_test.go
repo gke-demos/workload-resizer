@@ -43,7 +43,7 @@ var _ = Describe("PodReconciler", func() {
 	})
 
 	It("scenario 1: pod on baseline node — no resize, applied annotation written", func() {
-		node := makeNode("node-baseline", "n2d-standard-4")
+		node := makeNode("node-baseline", "n2d")
 		mustCreate(ctx, node)
 		DeferCleanup(func() { cleanup(ctx, node) })
 
@@ -53,14 +53,14 @@ var _ = Describe("PodReconciler", func() {
 
 		Eventually(func(g Gomega) {
 			p := getPod(ctx, "pod-baseline", ns)
-			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("n2d-standard-4"))
+			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("n2d"))
 			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("1000m"))).To(Equal(0))
 			g.Expect(p.Spec.Containers[0].Resources.Requests.Memory().Cmp(resource.MustParse("1Gi"))).To(Equal(0))
 		}, 15*time.Second, 250*time.Millisecond).Should(Succeed())
 	})
 
 	It("scenario 2: pod on more powerful node — CPU reduced", func() {
-		node := makeNode("node-n4", "n4-standard-4")
+		node := makeNode("node-n4", "n4")
 		mustCreate(ctx, node)
 		DeferCleanup(func() { cleanup(ctx, node) })
 
@@ -70,7 +70,7 @@ var _ = Describe("PodReconciler", func() {
 
 		Eventually(func(g Gomega) {
 			p := getPod(ctx, "pod-n4", ns)
-			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("n4-standard-4"))
+			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("n4"))
 			// API server canonicalizes resource quantities, so compare values, not strings.
 			origCPU, _ := resource.ParseQuantity(p.Annotations["workload-resizer.io/original-cpu.app"])
 			g.Expect(origCPU.Cmp(resource.MustParse("1000m"))).To(Equal(0))
@@ -86,7 +86,7 @@ var _ = Describe("PodReconciler", func() {
 	})
 
 	It("scenario 3: pod on less powerful node — CPU increased", func() {
-		node := makeNode("node-tiny", "tiny-machine")
+		node := makeNode("node-tiny", "tiny")
 		mustCreate(ctx, node)
 		DeferCleanup(func() { cleanup(ctx, node) })
 
@@ -96,7 +96,7 @@ var _ = Describe("PodReconciler", func() {
 
 		Eventually(func(g Gomega) {
 			p := getPod(ctx, "pod-tiny", ns)
-			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("tiny-machine"))
+			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("tiny"))
 			// 1000m * 1.0 / 0.5 = 2000m
 			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("2"))).To(Equal(0))
 		}, 15*time.Second, 250*time.Millisecond).Should(Succeed())
@@ -130,9 +130,9 @@ var _ = Describe("PodReconciler", func() {
 	})
 
 	It("scenario 5: bounds clamping — desired below floor is pulled up to bounds.cpu.min", func() {
-		// huge-machine perf is 100x baseline, so 1000m * 1.0 / 100.0 = 10m, which
+		// huge perf is 100x baseline, so 1000m * 1.0 / 100.0 = 10m, which
 		// is below the configured cpu.min of 50m. Expect 50m after reconcile.
-		node := makeNode("node-huge", "huge-machine")
+		node := makeNode("node-huge", "huge")
 		mustCreate(ctx, node)
 		DeferCleanup(func() { cleanup(ctx, node) })
 
@@ -142,7 +142,7 @@ var _ = Describe("PodReconciler", func() {
 
 		Eventually(func(g Gomega) {
 			p := getPod(ctx, "pod-huge", ns)
-			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("huge-machine"))
+			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("huge"))
 			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("50m"))).To(Equal(0))
 		}, 15*time.Second, 250*time.Millisecond).Should(Succeed())
 	})
@@ -152,7 +152,7 @@ var _ = Describe("PodReconciler", func() {
 		// recording its true template values, but spec already reflects a previous
 		// resize. The controller must compute desired from the annotation, not from
 		// current spec.
-		node := makeNode("node-n4-2", "n4-standard-4")
+		node := makeNode("node-n4-2", "n4")
 		mustCreate(ctx, node)
 		DeferCleanup(func() { cleanup(ctx, node) })
 
@@ -171,7 +171,7 @@ var _ = Describe("PodReconciler", func() {
 		// to 640m, which would be 800m * 1.0 / 1.25).
 		Eventually(func(g Gomega) {
 			p := getPod(ctx, "pod-restart", ns)
-			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("n4-standard-4"))
+			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("n4"))
 			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("800m"))).To(Equal(0))
 			// Originals annotation must remain unchanged (still 1000m, not overwritten with 800m).
 			g.Expect(p.Annotations["workload-resizer.io/original-cpu.app"]).To(Equal("1000m"))
@@ -192,7 +192,7 @@ var _ = Describe("podPredicate edge cases", func() {
 	})
 
 	It("skips bare pods (no controller owner)", func() {
-		node := makeNode("node-bare", "n4-standard-4")
+		node := makeNode("node-bare", "n4")
 		mustCreate(ctx, node)
 		DeferCleanup(func() { cleanup(ctx, node) })
 
@@ -210,7 +210,7 @@ var _ = Describe("podPredicate edge cases", func() {
 	})
 
 	It("skips containers without requests", func() {
-		node := makeNode("node-noreq", "n4-standard-4")
+		node := makeNode("node-noreq", "n4")
 		mustCreate(ctx, node)
 		DeferCleanup(func() { cleanup(ctx, node) })
 

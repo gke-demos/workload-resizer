@@ -122,12 +122,12 @@ var _ = AfterSuite(func() {
 
 func testConfig() *config.Config {
 	return &config.Config{
-		BaselineInstanceType: "n2d-standard-4",
+		BaselineNodeType: "n2d",
 		NodeTypes: map[string]config.NodeProfile{
-			"n2d-standard-4": {CPUPerf: 1.0, MemPerf: 1.0},
-			"n4-standard-4":  {CPUPerf: 1.25, MemPerf: 1.0},
-			"tiny-machine":   {CPUPerf: 0.5, MemPerf: 1.0},
-			"huge-machine":   {CPUPerf: 100.0, MemPerf: 100.0}, // forces clamp at min
+			"n2d":  {CPUPerf: 1.0, MemPerf: 1.0},
+			"n4":   {CPUPerf: 1.25, MemPerf: 1.0},
+			"tiny": {CPUPerf: 0.5, MemPerf: 1.0},
+			"huge": {CPUPerf: 100.0, MemPerf: 100.0}, // forces clamp at min
 		},
 		Bounds: config.Bounds{
 			CPU:    config.Bound{Min: resource.MustParse("50m"), Max: resource.MustParse("16")},
@@ -136,10 +136,14 @@ func testConfig() *config.Config {
 	}
 }
 
-func makeNode(name, instanceType string) *corev1.Node {
+// makeNode builds a Node carrying the controller's default
+// node-type label (cloud.google.com/machine-family). nodeType is the
+// label *value* — pick something that appears in testConfig().NodeTypes
+// (or doesn't, to exercise the UnknownNodeType path).
+func makeNode(name, nodeType string) *corev1.Node {
 	labels := map[string]string{}
-	if instanceType != "" {
-		labels["node.kubernetes.io/instance-type"] = instanceType
+	if nodeType != "" {
+		labels[controller.DefaultNodeTypeLabel] = nodeType
 	}
 	return &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels},

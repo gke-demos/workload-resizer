@@ -36,10 +36,10 @@ import (
 )
 
 // configMapManifest is the test config the controller will load. Designed so:
-//   - n2d-standard-4 is the baseline (perf 1.0)
-//   - n4-standard-4 is more powerful (perf 1.25 → CPU shrinks 20%)
-//   - tiny-machine is less powerful (perf 0.5 → CPU doubles)
-//   - huge-machine forces a clamp at the cpu.min floor
+//   - n2d is the baseline (perf 1.0)
+//   - n4 is more powerful (perf 1.25 → CPU shrinks 20%)
+//   - tiny is less powerful (perf 0.5 → CPU doubles)
+//   - huge forces a clamp at the cpu.min floor
 //   - cpu.min = 50m, cpu.max = 16
 const configMapManifest = `
 apiVersion: v1
@@ -49,12 +49,12 @@ metadata:
   namespace: workload-resizer-system
 data:
   config.yaml: |
-    baselineInstanceType: n2d-standard-4
+    baselineNodeType: n2d
     nodeTypes:
-      n2d-standard-4: { cpuPerf: 1.0,   memPerf: 1.0 }
-      n4-standard-4:  { cpuPerf: 1.25,  memPerf: 1.0 }
-      tiny-machine:   { cpuPerf: 0.5,   memPerf: 1.0 }
-      huge-machine:   { cpuPerf: 100.0, memPerf: 100.0 }
+      n2d: { cpuPerf: 1.0,   memPerf: 1.0 }
+      n4:  { cpuPerf: 1.25,  memPerf: 1.0 }
+      tiny:   { cpuPerf: 0.5,   memPerf: 1.0 }
+      huge:   { cpuPerf: 100.0, memPerf: 100.0 }
     bounds:
       cpu:    { min: "50m",  max: "16" }
       memory: { min: "64Mi", max: "32Gi" }
@@ -81,7 +81,7 @@ spec:
     spec:
       nodeSelector:
         type: kwok
-        node.kubernetes.io/instance-type: %s
+        cloud.google.com/machine-family: %s
       tolerations:
       - key: kwok.x-k8s.io/node
         operator: Exists
@@ -184,7 +184,7 @@ var _ = Describe("Resize", Ordered, func() {
 
 		_, _ = fmt.Fprintf(GinkgoWriter, "\n=== DEBUG: nodes ===\n")
 		out, _ = utils.Run(exec.Command("kubectl", "get", "nodes",
-			"-L", "node.kubernetes.io/instance-type", "-L", "type"))
+			"-L", "cloud.google.com/machine-family", "-L", "node.kubernetes.io/instance-type", "-L", "type"))
 		_, _ = fmt.Fprintln(GinkgoWriter, out)
 
 		_, _ = fmt.Fprintf(GinkgoWriter, "\n=== DEBUG: controller logs (last 100 lines) ===\n")
@@ -206,31 +206,31 @@ var _ = Describe("Resize", Ordered, func() {
 	)
 
 	It("scenario 1: pod on baseline node — no resize, applied annotation written", func() {
-		Expect(utils.CreateKWOKNode("kwok-baseline", "n2d-standard-4")).To(Succeed())
+		Expect(utils.CreateKWOKNode("kwok-baseline", "n2d")).To(Succeed())
 		DeferCleanup(func() { utils.DeleteKWOKNode("kwok-baseline") })
-		Expect(kubectlApply(deploymentManifest("baseline-app", "n2d-standard-4"))).To(Succeed())
+		Expect(kubectlApply(deploymentManifest("baseline-app", "n2d"))).To(Succeed())
 		DeferCleanup(func() { deleteDeployment("baseline-app") })
 		waitForRunningPodAndDeclareResize("baseline-app")
 
 		Eventually(func(g Gomega) {
 			p, err := getPodForApp("baseline-app")
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(p.Annotations[resizedAnnotation]).To(Equal("n2d-standard-4"))
+			g.Expect(p.Annotations[resizedAnnotation]).To(Equal("n2d"))
 			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("1000m"))).To(Equal(0))
 		}, 90*time.Second, 2*time.Second).Should(Succeed())
 	})
 
 	It("scenario 2: pod on more powerful node — CPU reduced", func() {
-		Expect(utils.CreateKWOKNode("kwok-n4", "n4-standard-4")).To(Succeed())
+		Expect(utils.CreateKWOKNode("kwok-n4", "n4")).To(Succeed())
 		DeferCleanup(func() { utils.DeleteKWOKNode("kwok-n4") })
-		Expect(kubectlApply(deploymentManifest("n4-app", "n4-standard-4"))).To(Succeed())
+		Expect(kubectlApply(deploymentManifest("n4-app", "n4"))).To(Succeed())
 		DeferCleanup(func() { deleteDeployment("n4-app") })
 		waitForRunningPodAndDeclareResize("n4-app")
 
 		Eventually(func(g Gomega) {
 			p, err := getPodForApp("n4-app")
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(p.Annotations[resizedAnnotation]).To(Equal("n4-standard-4"))
+			g.Expect(p.Annotations[resizedAnnotation]).To(Equal("n4"))
 			origCPU, _ := resource.ParseQuantity(p.Annotations[origCPUAnnotation])
 			g.Expect(origCPU.Cmp(resource.MustParse("1000m"))).To(Equal(0))
 			origMem, _ := resource.ParseQuantity(p.Annotations[origMemAnnotation])
@@ -242,16 +242,16 @@ var _ = Describe("Resize", Ordered, func() {
 	})
 
 	It("scenario 3: pod on less powerful node — CPU increased", func() {
-		Expect(utils.CreateKWOKNode("kwok-tiny", "tiny-machine")).To(Succeed())
+		Expect(utils.CreateKWOKNode("kwok-tiny", "tiny")).To(Succeed())
 		DeferCleanup(func() { utils.DeleteKWOKNode("kwok-tiny") })
-		Expect(kubectlApply(deploymentManifest("tiny-app", "tiny-machine"))).To(Succeed())
+		Expect(kubectlApply(deploymentManifest("tiny-app", "tiny"))).To(Succeed())
 		DeferCleanup(func() { deleteDeployment("tiny-app") })
 		waitForRunningPodAndDeclareResize("tiny-app")
 
 		Eventually(func(g Gomega) {
 			p, err := getPodForApp("tiny-app")
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(p.Annotations[resizedAnnotation]).To(Equal("tiny-machine"))
+			g.Expect(p.Annotations[resizedAnnotation]).To(Equal("tiny"))
 			// 1000m * 1.0 / 0.5 = 2000m
 			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("2"))).To(Equal(0))
 		}, 90*time.Second, 2*time.Second).Should(Succeed())
@@ -287,16 +287,16 @@ var _ = Describe("Resize", Ordered, func() {
 	})
 
 	It("scenario 5: bounds clamping — desired below floor is pulled up to bounds.cpu.min", func() {
-		Expect(utils.CreateKWOKNode("kwok-huge", "huge-machine")).To(Succeed())
+		Expect(utils.CreateKWOKNode("kwok-huge", "huge")).To(Succeed())
 		DeferCleanup(func() { utils.DeleteKWOKNode("kwok-huge") })
-		Expect(kubectlApply(deploymentManifest("huge-app", "huge-machine"))).To(Succeed())
+		Expect(kubectlApply(deploymentManifest("huge-app", "huge"))).To(Succeed())
 		DeferCleanup(func() { deleteDeployment("huge-app") })
 		waitForRunningPodAndDeclareResize("huge-app")
 
 		Eventually(func(g Gomega) {
 			p, err := getPodForApp("huge-app")
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(p.Annotations[resizedAnnotation]).To(Equal("huge-machine"))
+			g.Expect(p.Annotations[resizedAnnotation]).To(Equal("huge"))
 			// 1000m * 1.0 / 100.0 = 10m, clamped up to 50m.
 			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("50m"))).To(Equal(0))
 		}, 90*time.Second, 2*time.Second).Should(Succeed())
@@ -306,9 +306,9 @@ var _ = Describe("Resize", Ordered, func() {
 		// Same workload as scenario 2, but after the initial resize completes
 		// we restart the controller and assert the pod's resources remain
 		// unchanged on the second pass.
-		Expect(utils.CreateKWOKNode("kwok-n4-restart", "n4-standard-4")).To(Succeed())
+		Expect(utils.CreateKWOKNode("kwok-n4-restart", "n4")).To(Succeed())
 		DeferCleanup(func() { utils.DeleteKWOKNode("kwok-n4-restart") })
-		Expect(kubectlApply(deploymentManifest("restart-app", "n4-standard-4"))).To(Succeed())
+		Expect(kubectlApply(deploymentManifest("restart-app", "n4"))).To(Succeed())
 		DeferCleanup(func() { deleteDeployment("restart-app") })
 		waitForRunningPodAndDeclareResize("restart-app")
 
@@ -316,7 +316,7 @@ var _ = Describe("Resize", Ordered, func() {
 		Eventually(func(g Gomega) {
 			p, err := getPodForApp("restart-app")
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(p.Annotations[resizedAnnotation]).To(Equal("n4-standard-4"))
+			g.Expect(p.Annotations[resizedAnnotation]).To(Equal("n4"))
 			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("800m"))).To(Equal(0))
 		}, 90*time.Second, 2*time.Second).Should(Succeed())
 

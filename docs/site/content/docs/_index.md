@@ -1,20 +1,24 @@
 ---
 title: Documentation
-toc: false
-sidebar:
-  open: true
+linkTitle: Documentation
+weight: 1
+menu:
+  main:
+    weight: 10
 ---
 
-`workload-resizer` is a Kubernetes controller for GKE that uses the in-place pod resize subresource to dynamically adjust pod resource requests based on the instance type of the node a pod lands on. Requests calibrated for one machine type are recomputed against per-type performance units when the pod lands on a different one.
+You're in the `workload-resizer` reference docs. The site root has the marketing pitch; this section is the reference.
 
-{{< cards >}}
-  {{< card link="install/" title="Install" subtitle="Apply the controller + ConfigMap, inventory your nodes' instance types, and verify with a sample workload." icon="cloud-upload" >}}
-  {{< card link="how-it-works/" title="How it works" subtitle="Reconcile flow, annotation contract, the resize subresource, and the design decisions that came out of testing." icon="cog" >}}
-{{< /cards >}}
+## Start here
 
-## Quick links
+**New to the project?** → [Install]({{< relref "install.md" >}}) walks through the controller + ConfigMap apply path, the prerequisite K8s/node versions, how to inventory your cluster's machine families, and how to verify with a sample workload.
 
-- **Source**: [github.com/gke-demos/workload-resizer](https://github.com/gke-demos/workload-resizer)
-- **Releases**: [latest tags](https://github.com/gke-demos/workload-resizer/releases)
-- **Issue tracker**: [report a bug or request a feature](https://github.com/gke-demos/workload-resizer/issues)
-- **Container image**: `ghcr.io/gke-demos/workload-resizer`
+**Trying to understand the design?** → [How it works]({{< relref "how-it-works.md" >}}) covers the reconcile flow, the annotation contract that makes restarts idempotent, and the load-bearing design decisions (QoS preservation, node-support gating for K8s 1.35+, why we use `mgr.GetAPIReader()` for node lookups).
+
+## Reference index
+
+### Getting things done
+- **[Install]({{< relref "install.md" >}})** — the two-step apply, prerequisites, picking performance units, verifying with the sample workload, upgrade / uninstall.
+
+### Concepts and design
+- **[How it works]({{< relref "how-it-works.md" >}})** — reconcile flow, the global config schema, the things to know about the resize subresource (QoS preservation, node-support gating, recovery semantics).

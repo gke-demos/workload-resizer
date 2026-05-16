@@ -86,7 +86,7 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	var configNamespace, configName string
+	var configNamespace, configName, nodeTypeLabel string
 	var configRefreshInterval time.Duration
 	flag.StringVar(&configNamespace, "config-namespace", "workload-resizer-system",
 		"Namespace of the workload-resizer ConfigMap.")
@@ -94,6 +94,10 @@ func main() {
 		"Name of the workload-resizer ConfigMap.")
 	flag.DurationVar(&configRefreshInterval, "config-refresh-interval", 30*time.Second,
 		"How often to refresh the workload-resizer ConfigMap.")
+	flag.StringVar(&nodeTypeLabel, "node-type-label", controller.DefaultNodeTypeLabel,
+		"Node label whose value identifies the node type for performance-unit "+
+			"lookup. Default cloud.google.com/machine-family (set by GKE); "+
+			"set to whatever your cluster uses if not on GKE.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -213,8 +217,9 @@ func main() {
 		// the controller's Recorder field still uses the legacy
 		// k8s.io/client-go/tools/record.EventRecorder interface, so migrate
 		// both sides together (tracking work, post-v1).
-		Recorder: mgr.GetEventRecorderFor("workload-resizer"), //nolint:staticcheck
-		Config:   configStore,
+		Recorder:      mgr.GetEventRecorderFor("workload-resizer"), //nolint:staticcheck
+		Config:        configStore,
+		NodeTypeLabel: nodeTypeLabel,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Failed to set up Pod controller")
 		os.Exit(1)

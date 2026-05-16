@@ -23,8 +23,12 @@ new controller, hand-write it under `internal/controller/`. Do **not** run
    owned by a controller of kind `{ReplicaSet, StatefulSet, DaemonSet, Job}`
    (bare pods skipped), and missing the
    `workload-resizer.io/applied-instance-type` annotation.
-2. Read `node.kubernetes.io/instance-type` from the assigned node. Unknown
-   type → emit event, return.
+2. Read the node-type label from the assigned node. The label key is
+   configurable via `--node-type-label` (default
+   `cloud.google.com/machine-family`, set by GKE to the family — `n2d`,
+   `n4`, `c3` — which is the right granularity for performance-unit
+   lookups since perf per core is constant across sizes within a family).
+   Unknown type → emit event, return.
 3. For each container in `spec.containers` (init/sidecars skipped in v1),
    compute `desired = clamp(original * baselinePerf / nodePerf, bounds)`.
 4. **Annotation order matters** — write
@@ -71,7 +75,7 @@ RBAC markers live in `internal/controller/pod_controller.go` as
   `bin/k8s/`), no scheduler. Tests set `pod.spec.nodeName` directly. Fast
   (~15s).
 - **e2e** (`test/e2e/resize_test.go`) — Kind + KWOK. KWOK gives us cheap fake
-  nodes with arbitrary `node.kubernetes.io/instance-type` labels. Requires
+  nodes with arbitrary `cloud.google.com/machine-family` labels. Requires
   kind ≥ 0.20 (older versions can't run `kindest/node:v1.35.0`). Override
   with `KIND_NODE_IMAGE=...`. Run against an existing cluster with
   `USE_EXISTING_CLUSTER=true MANAGER_IMAGE=<registry>/...:<tag> make test-e2e`.

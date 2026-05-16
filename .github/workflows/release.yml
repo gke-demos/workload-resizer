@@ -106,9 +106,9 @@ jobs:
             kubectl apply -f https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}/config.yaml
             ```
 
-            Without the ConfigMap the controller starts cleanly but is a
-            silent no-op (it has nothing to compute resize ratios against).
-            See [the install page](https://gke-demos.github.io/workload-resizer/docs/install/)
+            Without the ConfigMap the controller pod fails fast on
+            startup (`CrashLoopBackOff` with `initial config load:
+            configmaps ... not found`). See [the install page](https://gke-demos.github.io/workload-resizer/docs/install/)
             for how to inventory your cluster's instance types and customize.
 
             ### Assets

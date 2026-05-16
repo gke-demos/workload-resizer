@@ -11,9 +11,14 @@ weight: 1
 - **`config.yaml`** — a sample `ConfigMap` with the schema and example
   GKE node-type performance units.
 
-Both are needed. Without the ConfigMap the controller starts cleanly
-but is a silent no-op — it has nothing to compute resize ratios against
-and won't emit errors.
+Both are needed. Without the ConfigMap the controller pod fails
+fast — the manager's initial load fetches the ConfigMap (default
+`workload-resizer-system/workload-resizer-config`); if it's missing,
+the manager exits with `initial config load: configmaps ... not
+found` and the pod ends up in `CrashLoopBackOff`. Once the ConfigMap
+exists at runtime and is later deleted, the controller keeps using
+the last-known config and logs the refresh failure every 30s
+(`--config-refresh-interval`).
 
 ## Prerequisites
 

@@ -15,8 +15,9 @@ Pre-v1. The v1 design and scope is settled (see [AGENTS.md](./AGENTS.md)); the s
 kubectl apply -f https://github.com/gke-demos/workload-resizer/releases/latest/download/install.yaml
 
 # 2. Install the config ConfigMap — edit nodeTypes for your cluster first!
-#    The shipped sample lists GKE node types; without this step the
-#    controller starts cleanly but is a silent no-op.
+#    The shipped sample lists GKE node types. Without this step the
+#    controller pod fails fast on startup (CrashLoopBackOff with
+#    "initial config load: configmaps ... not found").
 curl -fsSLO https://github.com/gke-demos/workload-resizer/releases/latest/download/config.yaml
 $EDITOR config.yaml
 kubectl apply -f config.yaml

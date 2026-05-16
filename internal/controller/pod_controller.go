@@ -44,6 +44,11 @@ const (
 	AnnotationOriginalMemoryFmt   = AnnotationPrefix + "original-memory.%s"
 	AnnotationAppliedInstanceType = AnnotationPrefix + "applied-instance-type"
 	AnnotationAppliedAt           = AnnotationPrefix + "applied-at"
+	// AnnotationSkip opts a pod out of resize. Set to "true" on the
+	// pod template (workloads inherit from Deployment / StatefulSet /
+	// DaemonSet / Job specs). The controller's own pod ships with
+	// this annotation so it never tries to resize itself.
+	AnnotationSkip = AnnotationPrefix + "skip"
 
 	// DefaultNodeTypeLabel is the node label whose value identifies the
 	// "node type" the controller looks up in its config. GKE sets
@@ -113,7 +118,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if pod.Spec.NodeName == "" || !hasControllerOwner(&pod) {
+	if pod.Spec.NodeName == "" || !hasControllerOwner(&pod) || isSkipped(&pod) {
 		return ctrl.Result{}, nil
 	}
 
@@ -241,6 +246,7 @@ func podPredicate() predicate.Predicate {
 		return p != nil &&
 			p.Spec.NodeName != "" &&
 			hasControllerOwner(p) &&
+			!isSkipped(p) &&
 			p.Annotations[AnnotationAppliedInstanceType] == ""
 	}
 	return predicate.Funcs{
@@ -275,6 +281,13 @@ func isResizeUnsupportedError(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "Pod running on node without support for resize")
+}
+
+// isSkipped reports whether the pod carries the opt-out annotation
+// (workload-resizer.io/skip=true). Used both in the predicate (avoid
+// even enqueuing the pod) and in Reconcile as a defense in depth.
+func isSkipped(p *corev1.Pod) bool {
+	return p != nil && p.Annotations[AnnotationSkip] == "true"
 }
 
 func hasControllerOwner(p *corev1.Pod) bool {

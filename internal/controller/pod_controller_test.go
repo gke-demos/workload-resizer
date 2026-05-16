@@ -209,6 +209,26 @@ var _ = Describe("podPredicate edge cases", func() {
 		}, 3*time.Second, 250*time.Millisecond).Should(Succeed())
 	})
 
+	It("skips pods carrying the opt-out annotation", func() {
+		node := makeNode("node-skip", "n4")
+		mustCreate(ctx, node)
+		DeferCleanup(func() { cleanup(ctx, node) })
+
+		// n4 is in the test config and is more powerful than baseline, so
+		// without the skip annotation this pod would resize from 1000m to
+		// 800m. With the annotation it must not be touched.
+		pod := makeOwnedPod("pod-skip", ns, "node-skip", "1000m", "1Gi")
+		pod.Annotations = map[string]string{controller.AnnotationSkip: "true"}
+		mustCreate(ctx, pod)
+		DeferCleanup(func() { cleanup(ctx, pod) })
+
+		Consistently(func(g Gomega) {
+			p := getPod(ctx, "pod-skip", ns)
+			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(BeEmpty())
+			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("1000m"))).To(Equal(0))
+		}, 3*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
 	It("skips containers without requests", func() {
 		node := makeNode("node-noreq", "n4")
 		mustCreate(ctx, node)

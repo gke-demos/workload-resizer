@@ -97,19 +97,23 @@ jobs:
             Two manifests, applied in order:
 
             ```bash
-            # 1. controller (RBAC, Deployment, namespace). Idempotent across upgrades.
-            kubectl apply -f https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}/install.yaml
-
-            # 2. controller config (the ConfigMap with node-type performance units
-            #    and bounds). Edit this before applying for production — the shipped
-            #    sample lists GKE node types; tweak nodeTypes for your cluster.
+            # 1. Namespace + ConfigMap (node-type performance units + bounds).
+            #    Edit this before applying for production — the shipped sample
+            #    lists GKE machine families; tweak nodeTypes for your cluster.
+            #    Apply BEFORE install.yaml so the controller pod (step 2)
+            #    finds its required ConfigMap already in place.
             kubectl apply -f https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}/config.yaml
+
+            # 2. Controller (RBAC, Deployment). Idempotent across upgrades.
+            kubectl apply -f https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}/install.yaml
             ```
 
-            Without the ConfigMap the controller pod fails fast on
+            Reverse the order and the controller pod fails fast on
             startup (`CrashLoopBackOff` with `initial config load:
-            configmaps ... not found`). See [the install page](https://gke-demos.github.io/workload-resizer/docs/install/)
-            for how to inventory your cluster's instance types and customize.
+            configmaps ... not found`) until the ConfigMap lands and
+            the kubelet's restart backoff times out. See
+            [the install page](https://gke-demos.github.io/workload-resizer/docs/install/)
+            for how to inventory your cluster's machine families and customize.
 
             ### Assets
 

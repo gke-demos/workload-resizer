@@ -13,14 +13,16 @@ description: "Apply the controller + ConfigMap, inventory your cluster's machine
 - **`config.yaml`** — a sample `ConfigMap` with the schema and example
   GKE node-type performance units.
 
-Both are needed. Without the ConfigMap the controller pod fails
-fast — the manager's initial load fetches the ConfigMap (default
-`workload-resizer-system/workload-resizer-config`); if it's missing,
-the manager exits with `initial config load: configmaps ... not
-found` and the pod ends up in `CrashLoopBackOff`. Once the ConfigMap
-exists at runtime and is later deleted, the controller keeps using
-the last-known config and logs the refresh failure every 30s
-(`--config-refresh-interval`).
+Both are needed. **Apply `config.yaml` first** — it carries the
+`workload-resizer-system` namespace and the required ConfigMap, so
+the controller pod (created by `install.yaml`) finds what it needs
+already in place. Reverse the order and the controller pod fails
+fast on startup (manager exits with `initial config load: configmaps
+... not found`, kubelet drops it into `CrashLoopBackOff`); it'll
+recover once the ConfigMap is applied, but only after the kubelet's
+restart backoff. Once the ConfigMap exists at runtime and is later
+deleted, the controller keeps using the last-known config and logs
+the refresh failure every 30s (`--config-refresh-interval`).
 
 ## Prerequisites
 
@@ -43,13 +45,15 @@ then apply both manifests in order. The examples below use the
 substitute a pinned `v0.x.y` tag for production.
 
 ```bash
-# 1. controller (RBAC, Deployment, namespace). Idempotent across upgrades.
-kubectl apply -f https://github.com/gke-demos/workload-resizer/releases/latest/download/install.yaml
-
-# 2. controller config — edit nodeTypes for your cluster before applying!
+# 1. Namespace + ConfigMap. Edit nodeTypes for your cluster first.
+#    Applying this BEFORE install.yaml means the controller pod (from
+#    step 2) finds the ConfigMap already in place and starts cleanly.
 curl -fsSLO https://github.com/gke-demos/workload-resizer/releases/latest/download/config.yaml
 $EDITOR config.yaml
 kubectl apply -f config.yaml
+
+# 2. Controller (RBAC, Deployment). Idempotent across upgrades.
+kubectl apply -f https://github.com/gke-demos/workload-resizer/releases/latest/download/install.yaml
 ```
 
 Confirm the controller is running:

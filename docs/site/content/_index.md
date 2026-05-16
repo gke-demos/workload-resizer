@@ -39,16 +39,20 @@ When a pod is Guaranteed (<code>requests == limits</code>), the resize mirrors t
 
 ## Install
 
-```bash
-# 1. Controller (RBAC, Deployment, namespace).
-kubectl apply -f https://github.com/gke-demos/workload-resizer/releases/latest/download/install.yaml
+ConfigMap first, then the controller. Reversed order works too but
+the controller pod crash-loops briefly until the ConfigMap lands —
+applying in this order avoids that. For non-GKE clusters, edit
+`config.yaml` first to match your nodes' `machine-family` label
+values.
 
-# 2. Sample config — edit nodeTypes for your cluster before applying.
-curl -fsSLO https://github.com/gke-demos/workload-resizer/releases/latest/download/config.yaml
-$EDITOR config.yaml
-kubectl apply -f config.yaml
+```bash
+URL=https://github.com/gke-demos/workload-resizer/releases/latest/download
+kubectl apply -f $URL/config.yaml
+kubectl apply -f $URL/install.yaml
 ```
 
-See [Install](docs/install/) for prerequisites, how to inventory your cluster's machine families, and how to verify the controller is working. [How it works](docs/how-it-works/) covers the reconcile flow, the annotation contract, and the design decisions that came out of testing (QoS preservation, node-support gating, recovery semantics).
+The [Install guide](docs/install/) covers prerequisites, how to
+inventory your cluster's machine families, picking performance
+units, and verifying with a sample workload.
 
 {{% /blocks/section %}}

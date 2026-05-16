@@ -1,3 +1,16 @@
+# Ship the namespace alongside the ConfigMap so this file can be applied
+# *before* install.yaml — applying config first means the controller pod
+# never starts up to find the ConfigMap missing (which fails fast into
+# CrashLoopBackOff). install.yaml also declares the namespace; kubectl
+# apply is idempotent on it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: workload-resizer-system
+  labels:
+    app.kubernetes.io/name: workload-resizer
+    app.kubernetes.io/managed-by: kustomize
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:

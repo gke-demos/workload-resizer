@@ -26,6 +26,9 @@ spec:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
+        # Opt this Deployment out of resize — the controller would
+        # otherwise treat its own pod as just another reconcile target.
+        workload-resizer.io/skip: "true"
       labels:
         control-plane: controller-manager
         app.kubernetes.io/name: workload-resizer

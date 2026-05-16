@@ -11,16 +11,16 @@ Pre-v1. The v1 design and scope is settled (see [AGENTS.md](./AGENTS.md)); the s
 ## Quick start
 
 ```bash
-# 1. Install the controller (RBAC, Deployment, namespace).
-kubectl apply -f https://github.com/gke-demos/workload-resizer/releases/latest/download/install.yaml
-
-# 2. Install the config ConfigMap — edit nodeTypes for your cluster first!
-#    The shipped sample lists GKE node types. Without this step the
-#    controller pod fails fast on startup (CrashLoopBackOff with
-#    "initial config load: configmaps ... not found").
+# 1. Create the namespace + apply the ConfigMap — edit nodeTypes for
+#    your cluster first! Doing this *before* installing the controller
+#    avoids a brief CrashLoopBackOff (the controller fails fast on
+#    startup if its required ConfigMap doesn't exist yet).
 curl -fsSLO https://github.com/gke-demos/workload-resizer/releases/latest/download/config.yaml
 $EDITOR config.yaml
 kubectl apply -f config.yaml
+
+# 2. Install the controller (RBAC, Deployment).
+kubectl apply -f https://github.com/gke-demos/workload-resizer/releases/latest/download/install.yaml
 
 # 3. (Optional) Apply a sample workload to see the resize happen.
 kubectl apply -f https://raw.githubusercontent.com/gke-demos/workload-resizer/main/config/samples/deployment.yaml

@@ -1,6 +1,6 @@
 ---
 title: How it works
-weight: 1
+weight: 2
 ---
 
 ## The problem

@@ -11,19 +11,28 @@ Pre-v1. The v1 design and scope is settled (see [AGENTS.md](./AGENTS.md)); the s
 ## Quick start
 
 ```bash
-# Apply the ConfigMap (sample at config/samples/configmap.yaml)
-kubectl apply -f config/samples/configmap.yaml
+# 1. Install the controller (RBAC, Deployment, namespace).
+kubectl apply -f https://github.com/gke-demos/workload-resizer/releases/latest/download/install.yaml
 
-# Deploy the controller
-make deploy IMG=ghcr.io/gke-demos/workload-resizer:latest
+# 2. Install the config ConfigMap — edit nodeTypes for your cluster first!
+#    The shipped sample lists GKE node types; without this step the
+#    controller starts cleanly but is a silent no-op.
+curl -fsSLO https://github.com/gke-demos/workload-resizer/releases/latest/download/config.yaml
+$EDITOR config.yaml
+kubectl apply -f config.yaml
 
-# Apply a sample workload
-kubectl apply -f config/samples/deployment.yaml
+# 3. (Optional) Apply a sample workload to see the resize happen.
+kubectl apply -f https://raw.githubusercontent.com/gke-demos/workload-resizer/main/config/samples/deployment.yaml
 
-# Watch the pod get resized
+# Watch the pod get resized:
 kubectl get pod -l app=sample-workload -w \
-  -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,CPU:.spec.containers[0].resources.requests.cpu,APPLIED:.metadata.annotations.workload-resizer\\.io/applied-instance-type
+  -o custom-columns=NAME:.metadata.name,\
+NODE:.spec.nodeName,\
+CPU:.spec.containers[0].resources.requests.cpu,\
+APPLIED:.metadata.annotations.workload-resizer\\.io/applied-instance-type
 ```
+
+See the [install page](https://gke-demos.github.io/workload-resizer/docs/install/) for prerequisites, how to inventory your cluster's instance types, picking performance units, and upgrade/uninstall.
 
 ## How it works
 

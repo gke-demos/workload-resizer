@@ -11,8 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# Build the manager binary
-FROM golang:1.25 AS builder
+# Build the manager binary.
+#
+# --platform=$BUILDPLATFORM pins the builder stage to the host arch (e.g.
+# linux/amd64 in CI), so multi-arch builds (`docker buildx --platform
+# linux/amd64,linux/arm64`) cross-compile via the Go toolchain instead of
+# running the entire Go build under QEMU emulation. The kubebuilder default
+# omits this and emulates arm64 — ~20 min vs ~2 min for the same image.
+FROM --platform=$BUILDPLATFORM golang:1.25 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 

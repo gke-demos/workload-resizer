@@ -32,3 +32,6 @@ go.work
 # Local agent-specific overlay; canonical agent guide lives in AGENTS.md
 CLAUDE.md
 .claude/
+
+# Output of `make build-installer` — published as a release asset, never committed.
+/dist/

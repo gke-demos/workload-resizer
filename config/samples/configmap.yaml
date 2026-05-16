@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: workload-resizer-config
+  namespace: workload-resizer-system
+data:
+  config.yaml: |
+    # The instance type that all Deployment/StatefulSet/etc. resource
+    # requests are assumed to be calibrated for. Pods that land on this
+    # node type are not resized.
+    baselineInstanceType: n2d-standard-4
+
+    # Per-instance-type performance units. The controller resizes a pod by
+    # `original * (baseline.cpuPerf / node.cpuPerf)` (and similarly for memory).
+    # Higher perf number = more capable node = smaller request needed.
+    nodeTypes:
+      n2d-standard-4: { cpuPerf: 1.0,  memPerf: 1.0 }
+      n4-standard-4:  { cpuPerf: 1.25, memPerf: 1.0 }
+      c3-standard-4:  { cpuPerf: 1.30, memPerf: 1.0 }
+
+    # Absolute floors and ceilings. Resized values are clamped into [min, max].
+    bounds:
+      cpu:
+        min: "50m"
+        max: "16"
+      memory:
+        min: "64Mi"
+        max: "32Gi"

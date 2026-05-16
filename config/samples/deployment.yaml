@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-workload
+  namespace: default
+  labels:
+    app: sample-workload
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sample-workload
+  template:
+    metadata:
+      labels:
+        app: sample-workload
+    spec:
+      # Allow in-place resize without restarting the container.
+      # Set per-resource policy explicitly so the kubelet performs an
+      # in-place update where it can; memory decrease may still be refused.
+      containers:
+      - name: app
+        image: registry.k8s.io/pause:3.10
+        resources:
+          requests:
+            cpu: "1000m"
+            memory: "1Gi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        resizePolicy:
+        - resourceName: cpu
+          restartPolicy: NotRequired
+        - resourceName: memory
+          restartPolicy: NotRequired

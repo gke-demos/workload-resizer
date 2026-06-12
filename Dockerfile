@@ -18,7 +18,7 @@
 # linux/amd64,linux/arm64`) cross-compile via the Go toolchain instead of
 # running the entire Go build under QEMU emulation. The kubebuilder default
 # omits this and emulates arm64 — ~20 min vs ~2 min for the same image.
-FROM --platform=$BUILDPLATFORM golang:1.25 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
 ARG TARGETOS
 ARG TARGETARCH
 

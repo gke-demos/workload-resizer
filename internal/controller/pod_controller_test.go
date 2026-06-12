@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
+	"github.com/gke-demos/workload-resizer/internal/config"
 	"github.com/gke-demos/workload-resizer/internal/controller"
 )
 
@@ -175,6 +176,166 @@ var _ = Describe("PodReconciler", func() {
 			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("800m"))).To(Equal(0))
 			// Originals annotation must remain unchanged (still 1000m, not overwritten with 800m).
 			g.Expect(p.Annotations["workload-resizer.io/original-cpu.app"]).To(Equal("1000m"))
+		}, 15*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
+	It("scenario 7: direct computeClasses matching", func() {
+		cfg := testConfig()
+		cfg.ComputeClasses = map[string]config.ComputeClassConfig{
+			"Performance": {
+				BaselineNodeType: "c3",
+				NodeTypes: map[string]config.NodeProfile{
+					"c3": {CPUPerf: 2.0, MemPerf: 1.0},
+				},
+			},
+		}
+		store.Set(cfg)
+		DeferCleanup(func() { store.Set(testConfig()) })
+
+		node := makeNode("node-cc-n4", "n4")
+		mustCreate(ctx, node)
+		DeferCleanup(func() { cleanup(ctx, node) })
+
+		pod := makeOwnedPod("pod-cc-perf", ns, "node-cc-n4", "1000m", "1Gi")
+		pod.Spec.NodeSelector = map[string]string{
+			"cloud.google.com/compute-class": "Performance",
+		}
+		mustCreate(ctx, pod)
+		DeferCleanup(func() { cleanup(ctx, pod) })
+
+		Eventually(func(g Gomega) {
+			p := getPod(ctx, "pod-cc-perf", ns)
+			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("n4"))
+			// Desired CPU: 1000m * 2.0 (baseline c3 perf) / 1.25 (node n4 perf) = 1600m
+			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("1600m"))).To(Equal(0))
+		}, 15*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
+	It("scenario 8: direct podLabels matching and bounds override", func() {
+		cfg := testConfig()
+		cfg.PodLabels = map[string]map[string]config.LabelConfig{
+			"env": {
+				"sandbox": {
+					Bounds: &config.Bounds{
+						CPU:    config.Bound{Min: resource.MustParse("10m"), Max: resource.MustParse("100m")},
+						Memory: config.Bound{Min: resource.MustParse("16Mi"), Max: resource.MustParse("256Mi")},
+					},
+				},
+			},
+		}
+		store.Set(cfg)
+		DeferCleanup(func() { store.Set(testConfig()) })
+
+		node := makeNode("node-labels-n4", "n4")
+		mustCreate(ctx, node)
+		DeferCleanup(func() { cleanup(ctx, node) })
+
+		pod := makeOwnedPod("pod-label-sandbox", ns, "node-labels-n4", "1000m", "1Gi")
+		pod.Labels = map[string]string{
+			"env": "sandbox",
+		}
+		mustCreate(ctx, pod)
+		DeferCleanup(func() { cleanup(ctx, pod) })
+
+		Eventually(func(g Gomega) {
+			p := getPod(ctx, "pod-label-sandbox", ns)
+			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("n4"))
+			// 1000m * 1.0 (baseline) / 1.25 (node n4) = 800m.
+			// However, bounds.cpu.max for sandbox is 100m.
+			// So it should clamp to 100m!
+			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("100m"))).To(Equal(0))
+		}, 15*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
+	It("scenario 9: direct podAnnotations matching and fallback to global defaults", func() {
+		cfg := testConfig()
+		cfg.PodAnnotations = map[string]map[string]config.AnnotationConfig{
+			"workload-resizer.io/tier": {
+				"critical-db": {
+					Bounds: &config.Bounds{
+						CPU:    config.Bound{Min: resource.MustParse("1500m"), Max: resource.MustParse("16")},
+						Memory: config.Bound{Min: resource.MustParse("1Gi"), Max: resource.MustParse("32Gi")},
+					},
+				},
+			},
+		}
+		store.Set(cfg)
+		DeferCleanup(func() { store.Set(testConfig()) })
+
+		node := makeNode("node-annos-baseline", "n2d")
+		mustCreate(ctx, node)
+		DeferCleanup(func() { cleanup(ctx, node) })
+
+		// On baseline node (n2d), CPU requested is 1000m.
+		// However, annotations-matched bounds.cpu.min is 1500m.
+		// It should be pulled up to 1500m!
+		pod := makeOwnedPod("pod-anno-db", ns, "node-annos-baseline", "1000m", "1Gi")
+		pod.Annotations = map[string]string{
+			"workload-resizer.io/tier": "critical-db",
+		}
+		mustCreate(ctx, pod)
+		DeferCleanup(func() { cleanup(ctx, pod) })
+
+		Eventually(func(g Gomega) {
+			p := getPod(ctx, "pod-anno-db", ns)
+			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("n2d"))
+			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("1500m"))).To(Equal(0))
+		}, 15*time.Second, 250*time.Millisecond).Should(Succeed())
+	})
+
+	It("scenario 10: prioritized overrides precedence", func() {
+		cfg := testConfig()
+		cfg.ComputeClasses = map[string]config.ComputeClassConfig{
+			"Performance": {
+				Bounds: &config.Bounds{
+					CPU:    config.Bound{Min: resource.MustParse("200m"), Max: resource.MustParse("32")},
+					Memory: config.Bound{Min: resource.MustParse("64Mi"), Max: resource.MustParse("32Gi")},
+				},
+			},
+		}
+		cfg.Overrides = []config.Override{
+			{
+				Name: "high-priority-override",
+				Match: config.Match{
+					ComputeClass: "Performance",
+					PodLabel: map[string]string{
+						"priority": "critical",
+					},
+				},
+				Bounds: &config.Bounds{
+					CPU:    config.Bound{Min: resource.MustParse("1000m"), Max: resource.MustParse("16")},
+					Memory: config.Bound{Min: resource.MustParse("1Gi"), Max: resource.MustParse("32Gi")},
+				},
+			},
+		}
+		store.Set(cfg)
+		DeferCleanup(func() { store.Set(testConfig()) })
+
+		node := makeNode("node-overrides-baseline", "n2d")
+		mustCreate(ctx, node)
+		DeferCleanup(func() { cleanup(ctx, node) })
+
+		// Pod has nodeSelector for ComputeClass = Performance, and label priority = critical.
+		// It matches both ComputeClasses map and Overrides.
+		// Since Overrides takes precedence, it should apply Overrides bounds (CPU min 1000m)
+		// rather than ComputeClasses bounds (CPU min 200m).
+		// Original requested CPU is 100m.
+		// Overrides bounds.cpu.min = 1000m -> clamped to 1000m.
+		// ComputeClasses bounds.cpu.min = 200m -> if it applied, clamped to 200m.
+		pod := makeOwnedPod("pod-override-prec", ns, "node-overrides-baseline", "100m", "2Gi")
+		pod.Labels = map[string]string{
+			"priority": "critical",
+		}
+		pod.Spec.NodeSelector = map[string]string{
+			"cloud.google.com/compute-class": "Performance",
+		}
+		mustCreate(ctx, pod)
+		DeferCleanup(func() { cleanup(ctx, pod) })
+
+		Eventually(func(g Gomega) {
+			p := getPod(ctx, "pod-override-prec", ns)
+			g.Expect(p.Annotations[controller.AnnotationAppliedInstanceType]).To(Equal("n2d"))
+			g.Expect(p.Spec.Containers[0].Resources.Requests.Cpu().Cmp(resource.MustParse("1000m"))).To(Equal(0))
 		}, 15*time.Second, 250*time.Millisecond).Should(Succeed())
 	})
 })

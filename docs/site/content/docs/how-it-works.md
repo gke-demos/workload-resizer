@@ -51,6 +51,8 @@ bounds:
 
 The keys under `nodeTypes:` are the *values* the controller will see on the node-type label — `n2d`, `n4`, `c3` etc. with the default `cloud.google.com/machine-family`; full instance types if you set `--node-type-label=node.kubernetes.io/instance-type` instead. `cpuPerf` and `memPerf` are normalized performance units — the controller computes `baseline / node`, so a `1.25` is "this node is 1.25× as capable as baseline, so it needs `1/1.25 = 0.8` of the request." The controller polls this ConfigMap on `--config-refresh-interval` (30s default).
 
+Beyond these global defaults, `workload-resizer` also supports fine-grained matching rules. You can define custom resizing ratios, performance profiles, and clamping boundaries tailored to specific **GKE Compute Classes**, arbitrary **Pod labels**, **Pod annotations**, or prioritized **overrides**. For a complete guide on how to configure these rules and understand their precedence order, see the **[Configuration reference]({{< relref "configuration.md" >}})**.
+
 ## Design decisions worth knowing
 
 These came out of envtest and Kind + KWOK testing; they're load-bearing.

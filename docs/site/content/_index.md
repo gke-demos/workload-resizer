@@ -35,7 +35,9 @@ When a pod is Guaranteed (<code>requests == limits</code>), the resize mirrors t
 
 {{% /blocks/section %}}
 
-{{% blocks/section %}}
+{{% blocks/section color="white" %}}
+
+<div class="td-content col-12 col-lg-8 mx-auto">
 
 ## Install
 
@@ -54,5 +56,7 @@ kubectl apply -f $URL/install.yaml
 The [Install guide](docs/install/) covers prerequisites, how to
 inventory your cluster's machine families, picking performance
 units, and verifying with a sample workload.
+
+</div>
 
 {{% /blocks/section %}}

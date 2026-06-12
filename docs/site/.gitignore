@@ -8,3 +8,7 @@ resources/
 
 # Hugo module cache.
 .hugo_build.lock
+
+# Hugo regenerates this on every `hugo mod get`; CI does the same in
+# docs.yml. Tracking it locally just causes spurious diffs.
+go.sum

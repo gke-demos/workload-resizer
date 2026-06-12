@@ -22,3 +22,4 @@ You're in the `workload-resizer` reference docs. The site root has the marketing
 
 ### Concepts and design
 - **[How it works]({{< relref "how-it-works.md" >}})** — reconcile flow, the global config schema, the things to know about the resize subresource (QoS preservation, node-support gating, recovery semantics).
+- **[Configuration reference]({{< relref "configuration.md" >}})** — detailed reference for GKE ComputeClass matching, label/annotation rules, and prioritized overrides.

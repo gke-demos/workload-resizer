@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -147,13 +148,21 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, nil
 	}
 
-	nodeProfile, ok := cfg.NodeTypes[nodeType]
+	// Resolve active configuration (using precedence and fallback merging)
+	baselineNodeType, nodeTypes, bounds := r.resolveActiveConfig(&pod, cfg)
+
+	nodeProfile, ok := nodeTypes[nodeType]
 	if !ok {
 		r.Recorder.Eventf(&pod, corev1.EventTypeWarning, EventReasonUnknownNodeType,
 			"Node type %q not in workload-resizer config; skipping", nodeType)
 		return ctrl.Result{}, nil
 	}
-	baselineProfile := cfg.NodeTypes[cfg.BaselineNodeType]
+	baselineProfile, ok := nodeTypes[baselineNodeType]
+	if !ok {
+		// Under normal validation, the baseline node type is guaranteed to exist.
+		// As defensive programming, we skip if it is missing.
+		return ctrl.Result{}, nil
+	}
 
 	decisions := make([]containerDecision, 0, len(pod.Spec.Containers))
 	for i := range pod.Spec.Containers {
@@ -174,11 +183,11 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		}
 		if hasCPU {
 			scaled := resize.ApplyCPURatio(origCPU, baselineProfile.CPUPerf, nodeProfile.CPUPerf)
-			d.desiredCPU, d.cpuClampedAtMin, d.cpuClampedAtMax = resize.Clamp(scaled, cfg.Bounds.CPU.Min, cfg.Bounds.CPU.Max)
+			d.desiredCPU, d.cpuClampedAtMin, d.cpuClampedAtMax = resize.Clamp(scaled, bounds.CPU.Min, bounds.CPU.Max)
 		}
 		if hasMem {
 			scaled := resize.ApplyMemoryRatio(origMem, baselineProfile.MemPerf, nodeProfile.MemPerf)
-			d.desiredMemory, d.memClampedAtMin, d.memClampedAtMax = resize.Clamp(scaled, cfg.Bounds.Memory.Min, cfg.Bounds.Memory.Max)
+			d.desiredMemory, d.memClampedAtMin, d.memClampedAtMax = resize.Clamp(scaled, bounds.Memory.Min, bounds.Memory.Max)
 		}
 		decisions = append(decisions, d)
 	}
@@ -440,4 +449,95 @@ func (r *PodReconciler) applyResize(ctx context.Context, pod *corev1.Pod, decisi
 		return err
 	}
 	return r.SubResource("resize").Patch(ctx, pod, client.RawPatch(types.StrategicMergePatchType, body))
+}
+
+// resolveActiveConfig evaluates the config maps and overrides to find the active configuration
+// for the given Pod. It merges any custom settings with the global defaults.
+func (r *PodReconciler) resolveActiveConfig(pod *corev1.Pod, cfg *config.Config) (baselineNodeType string, nodeTypes map[string]config.NodeProfile, bounds config.Bounds) {
+	// Start with global defaults
+	baselineNodeType = cfg.BaselineNodeType
+	bounds = cfg.Bounds
+
+	// Deep copy nodeTypes so we can safely merge overrides
+	nodeTypes = make(map[string]config.NodeProfile, len(cfg.NodeTypes))
+	maps.Copy(nodeTypes, cfg.NodeTypes)
+
+	// 1. Check Overrides list (highest precedence)
+	for _, o := range cfg.Overrides {
+		if r.matchOverride(pod, o.Match) {
+			r.applySubConfig(o.BaselineNodeType, o.NodeTypes, o.Bounds, &baselineNodeType, nodeTypes, &bounds)
+			return baselineNodeType, nodeTypes, bounds
+		}
+	}
+
+	// 2. Check PodAnnotations map (second precedence)
+	for aKey, valMap := range cfg.PodAnnotations {
+		podVal, ok := pod.Annotations[aKey]
+		if !ok {
+			continue
+		}
+		if sub, exists := valMap[podVal]; exists {
+			r.applySubConfig(sub.BaselineNodeType, sub.NodeTypes, sub.Bounds, &baselineNodeType, nodeTypes, &bounds)
+			return baselineNodeType, nodeTypes, bounds
+		}
+	}
+
+	// 3. Check PodLabels map (third precedence)
+	for lKey, valMap := range cfg.PodLabels {
+		podVal, ok := pod.Labels[lKey]
+		if !ok {
+			continue
+		}
+		if sub, exists := valMap[podVal]; exists {
+			r.applySubConfig(sub.BaselineNodeType, sub.NodeTypes, sub.Bounds, &baselineNodeType, nodeTypes, &bounds)
+			return baselineNodeType, nodeTypes, bounds
+		}
+	}
+
+	// 4. Check ComputeClasses map (fourth precedence)
+	if pod.Spec.NodeSelector != nil {
+		if ccVal, ok := pod.Spec.NodeSelector["cloud.google.com/compute-class"]; ok {
+			if sub, exists := cfg.ComputeClasses[ccVal]; exists {
+				r.applySubConfig(sub.BaselineNodeType, sub.NodeTypes, sub.Bounds, &baselineNodeType, nodeTypes, &bounds)
+				return baselineNodeType, nodeTypes, bounds
+			}
+		}
+	}
+
+	// 5. Fallback directly to global defaults
+	return baselineNodeType, nodeTypes, bounds
+}
+
+func (r *PodReconciler) matchOverride(pod *corev1.Pod, match config.Match) bool {
+	// ALL specified criteria must match (AND logic).
+	if match.ComputeClass != "" {
+		if pod.Spec.NodeSelector == nil || pod.Spec.NodeSelector["cloud.google.com/compute-class"] != match.ComputeClass {
+			return false
+		}
+	}
+	if len(match.PodLabel) > 0 {
+		for k, v := range match.PodLabel {
+			if pod.Labels == nil || pod.Labels[k] != v {
+				return false
+			}
+		}
+	}
+	if len(match.PodAnnotation) > 0 {
+		for k, v := range match.PodAnnotation {
+			if pod.Annotations == nil || pod.Annotations[k] != v {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (r *PodReconciler) applySubConfig(baseType string, subNodeTypes map[string]config.NodeProfile, b *config.Bounds, baselineNodeType *string, nodeTypes map[string]config.NodeProfile, bounds *config.Bounds) {
+	if baseType != "" {
+		*baselineNodeType = baseType
+	}
+	maps.Copy(nodeTypes, subNodeTypes)
+	if b != nil {
+		*bounds = *b
+	}
 }
